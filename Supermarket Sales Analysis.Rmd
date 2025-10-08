@@ -1,0 +1,201 @@
+---
+title: "Supermart Sales Analysis"
+author: "Chloe Shin"
+date: "2025-09-13"
+output:
+  pdf_document:
+    latex_engine: xelatex
+fontsize: 10pt
+mainfont: "Arial"
+header-includes:
+  - \renewcommand{\bfdefault}{m}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(error=TRUE)
+knitr::opts_chunk$set(message = FALSE)
+set.seed(0)
+```
+
+### The dataset includes customer information of a supermarket that aims to predict the success of future marketing campaigns. 
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+ifood <- read_csv("https://raw.githubusercontent.com/nailson/ifood-data-business-analyst-test/refs/heads/master/ifood_df.csv")
+```
+```{r}
+ifood <- ifood %>% 
+  distinct()
+```
+
+## 1. Customer profile
+```{r}
+ifood %>% 
+  ggplot(aes(x = Age)) +
+  geom_histogram(aes(y = after_stat(count) / sum(after_stat(count))), 
+                 binwidth = 5, 
+                 fill = 'orange') +
+  labs(x = "Age", 
+       y = "Proportion (%)", 
+       title = "Age Distribution")
+```
+
+```{r}
+ifood %>% 
+  ggplot(aes(x = Income)) +
+  geom_histogram(aes(y = after_stat(count) / sum(after_stat(count))), 
+                 binwidth = 10000, 
+                 fill = 'skyblue') +
+  labs(x = "Annual Income (USD)", 
+       y = "Proportion (%)", 
+       title = "Income Distribution")
+```
+
+```{r}
+ifood_marriage <- ifood %>%
+  pivot_longer(cols = c(marital_Widow, 
+                        marital_Divorced, 
+                        marital_Together, 
+                        marital_Single, 
+                        marital_Married),
+               names_to = 'marital',
+               values_to = 'value') %>%
+  filter(value == 1)
+
+ifood_marriage <- ifood_marriage %>%
+  mutate (marital = recode(marital,
+      marital_Divorced = "Divorced",
+      marital_Married  = "Married",
+      marital_Single   = "Single",
+      marital_Together = "Together",
+      marital_Widow    = "Widow")) %>%
+  mutate(proportion = value / sum(value))
+
+ifood_marriage %>%
+  ggplot(aes(x = marital, 
+             y = proportion, 
+             fill = marital)) +
+  geom_col(fill = 'lightgreen') +
+  labs (x = 'Marital Status', 
+        y = 'Proportion (%)', 
+        title = 'Marital Status Distribution')
+```
+
+```{r}
+ifood_education <- ifood %>%
+   pivot_longer(cols = c(`education_2n Cycle`, 
+                         education_Basic, 
+                         education_Graduation, 
+                         education_Master, 
+                         education_PhD ),
+               names_to = 'education',
+               values_to = 'value') %>%
+  filter(value == 1)
+
+ifood_education <- ifood_education %>%
+  mutate (education = recode(education,
+      `education_2n Cycle` = "2n Cycle",
+      education_Basic  = "Basic",
+      education_Graduation   = "Bachelor",
+      education_Master = "Master",
+      education_PhD    = "PhD")) %>%
+      mutate(proportion = value / sum(value))
+
+ifood_education %>%
+  mutate(education = factor(education, 
+                            levels = c("Basic", "2n Cycle","Bachelor", "Master", "PhD"))) %>%
+  ggplot(aes(x = education, 
+             y = proportion, 
+             fill = education)) +
+  geom_col(fill = 'yellow') +
+  labs (x = 'Education Status', 
+        y = 'Proportion (%)', 
+        title = 'Education Status Distribution')
+```
+
+## 2. Assessing the success of previous marketing campaigns
+```{r}
+ifood_campaign <- ifood[, c("AcceptedCmp1", 
+                            "AcceptedCmp2", 
+                            "AcceptedCmp3", 
+                            "AcceptedCmp4", 
+                            "AcceptedCmp5", 
+                            "Response")]
+
+ifood_campaign <- ifood %>% 
+  summarise("Campaign 1" = sum(AcceptedCmp1),
+         "Campaign 2" = sum(AcceptedCmp2), 
+         "Campaign 3" = sum(AcceptedCmp3),
+         "Campaign 4" = sum(AcceptedCmp4),
+         "Campaign 5" = sum(AcceptedCmp5), 
+         "Campaign Last" = sum(Response)) %>%
+    pivot_longer(cols = everything(),
+               names_to = "campaign",
+               values_to = "value") %>%
+    mutate(proportion = value / sum(value))
+
+ifood_campaign %>%
+  ggplot(aes(x = campaign,
+             y = proportion)) +
+  geom_col(fill = "purple") +
+  coord_flip() +
+  labs(
+    x = "Campaign",
+    y = "Proportion Accepted (%)",
+    title = "Campaign Acceptance Rates"
+  ) 
+
+```
+
+## 3. Campaign engagements
+```{r}
+ifood_acceptcmp <- ifood %>%
+  select(AcceptedCmp1, AcceptedCmp2, AcceptedCmp3, AcceptedCmp4, AcceptedCmp5, Response) %>%
+  mutate(numaccept = rowSums(select(., AcceptedCmp1:AcceptedCmp5)), 
+         prevaccept = numaccept > 0)
+
+prop.table(table(ifood_acceptcmp$prevaccept, ifood_acceptcmp$Response), 1)
+chisq.test(table(ifood_acceptcmp$prevaccept, ifood_acceptcmp$Response))
+```
+Among the customers who did not accept any of the previous campaigns, only 8.35% accepted the most recent campagin. On the other hand, among the customers who accepted at least one of the previous campaigns, 40.8% accepted the most recent campaign.  
+Previous engagement with campaigns significantly increases the likelihoood of responding to the most recent campaign. 
+
+## 4. Target demographic for the next campaign
+```{r}
+marital_response <- ifood_marriage %>%
+  group_by(marital) %>%
+  summarise(
+    customers = n(),
+    acceptance = mean(Response))
+
+print(marital_response)
+chisq.test(table(ifood_marriage$marital, ifood_marriage$Response))
+```
+```{r}
+education_response <- ifood_education %>%
+  group_by(education) %>%
+  summarise(
+    customers = n(),
+    acceptance = mean(Response))
+
+print(education_response)
+chisq.test(table(ifood_education$education, ifood_education$Response))
+```
+
+```{r}
+ifood_predictors <- ifood %>%
+  mutate(childnum = Kidhome + Teenhome)
+
+model <- lm(Response ~ Income + Age + MntTotal + childnum + AcceptedCmpOverall, ifood_predictors)
+summary(model)
+
+```
+
+## Statistically significant predictors
+### i.  Marital status: Customers living alone (i.e., divorced, single, widowed)
+### ii.  Educational status: Customers with higher levels of education (i.e., PhD) 
+### iii. Income: Customers with lower income
+### iv. Amount of purchase: Customers who spent greater amount of money on the supermarket's products  
+### v. Number of accepted campaigns: Customers who accepted greater number of past campaigns 
+### ... are more likely to accept the most recent campaign
